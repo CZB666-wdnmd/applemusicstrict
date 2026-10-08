@@ -8,5 +8,5 @@
 2026-10-08 静态检查：1606、1607 均通过 50 个方法、48 个字段的精确接口核验；git diff --check 通过。
 1606 使用工作目录保留的原始 base APK（哈希与已知 profile 一致），因为 Downloads 原始附件已不在原路径。
 
-未执行本地构建、安装或设备入口测试；此前授权针对 0.2.1，本次没有新增构建授权。手机当前仍为 0.2.1。
+用户随后明确授权“编译好安装上去，然后我来测试”。已完成 assembleDebug、lintDebug（0 errors、5 warnings），签名校验通过且与旧版相同，adb install -r 成功。设备确认 versionName=0.2.2、versionCode=5。没有代替用户执行入口交互测试；重新启动 Apple Music 后由用户验证。
 待验证：升级后默认桌面入口消失、LSPosed 模块设置可打开、音频分组显示且点击打开控制界面、返回 Apple Music 正常。
