@@ -48,7 +48,6 @@
 - 音源格式不代表蓝牙耳机、系统混音器或 DAC 的最终输出。
 - 未提供的参数显示为未知，不虚构音质档位。关闭接管时，宿主缓存筛选可能使观察到的清单不完整。
 
-下载歌曲、视频和电台不强制切换。接管在线歌曲时使用网络完整清单，不删除已有缓存或下载。模块不提供账号、订阅或内容授权，不改变 DRM 授权流程。
 
 ## 构建
 
@@ -68,35 +67,7 @@ bash ./gradlew :app:assembleDebug :app:lintDebug
 
 APK 输出：`app/build/outputs/apk/debug/app-debug.apk`。
 
-也可在仓库 **Actions** 页面手动运行构建工作流，完成后下载构建产物。
-
-签名私钥不包含在仓库中。本机有 `.signing/debug.keystore` 时使用该调试签名，否则使用默认 debug key。自行构建或 CI 构建的 APK 可能与已安装版本签名不同，无法直接覆盖安装。不要提交私人签名密钥。
-
-旧的 `tools/build_sdk.py` 已停用，带 Material 资源的版本需要使用 Gradle。
-
-## 验证与限制
-
-```bash
-python3 tests/run.py
-python3 tools/verify_profile.py /path/to/apple-music.apkm
-```
-
-测试需要 Java/Javac。profile 核验需要自行提供包含 `base.apk` 的 APKM/APKS；仓库不分发 Apple Music 安装包。
-
-- 330 项策略与清单断言通过，但不代替 Android / LSPosed 集成测试。
-- 1606、1607 各完成 50 个方法、48 个字段的静态核验。
-- 0.2.1 实机验证：ALAC 与 AAC 列表、手动切换 AAC 128、切回自动 ALAC，播放会话正常。
-- 0.2.2 已构建并安装，Lint 为 0 errors / 5 warnings；新增设置入口的交互测试待完成。
-- 尚未覆盖所有杜比曲目、网络切换、长时间播放和不同输出设备。
-
-详见 [0.2.1 验证记录](VALIDATION-0.2.1.md) 和 [0.2.2 验证记录](VALIDATION-0.2.2.md)。其他早期分析与测试文件属于历史记录，不代表当前版本已验证的能力。
-
-## 问题反馈
-
-请在 [Issues](https://github.com/CZB666-wdnmd/applemusicstrict/issues) 附上 Apple Music 版本与 base APK 哈希、Android / LSPosed 版本、接管开关状态、复现步骤和脱敏后的 `AppleMusicStrict` 日志。
 
 ## 许可与参考
 
 [MIT License](LICENSE)。本项目与 Apple Inc. 无隶属关系。
-
-开发过程参考了 [AM-plus-plus](https://github.com/Zennmn/AM-plus-plus) 的宿主生命周期与原生设置模型适配思路。

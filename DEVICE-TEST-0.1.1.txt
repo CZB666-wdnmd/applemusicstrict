@@ -1,1 +1,0 @@
-10-08 14:58:43.590 31314  9107 F libc    : Fatal signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0xa9be7bfdd503233f in tid 9107 (ExoPlayer:Playb), pid 31314 (e.android.music)
