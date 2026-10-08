@@ -1,5 +1,6 @@
 package dev.local.applemusicstrict;
 
+import android.app.Application;
 import android.net.Uri;
 import android.util.Log;
 import android.util.Pair;
@@ -15,31 +16,73 @@ import java.util.*;
 public final class StrictModule extends XposedModule {
     private static final String PACKAGE = "com.apple.android.music";
     private static final String TAG = "AppleMusicStrict";
-    private static final String BASE_SHA256 = "75bcdefe635ec00b2865e789761562a03acd415b5ba18a8e920b995c63811126";
-    private boolean installed;
+    private static final Map<String, String> PROFILES = Map.of(
+            "3d09687ed752e48e73f2c72524e18cffff69c66b523096c2e97c8f9135980603", "7.0.0-beta/1606",
+            "75bcdefe635ec00b2865e789761562a03acd415b5ba18a8e920b995c63811126", "7.0.0-beta/1607");
+    private String processName = "";
+    private boolean bootstrapInstalled;
+    private boolean initializationStarted;
+    private volatile boolean active;
     private final ThreadLocal<Object> constructingContext = new ThreadLocal<>();
     private final Map<Object, Object> factories = Collections.synchronizedMap(new WeakHashMap<>());
     private final Map<Object, Object> parsers = Collections.synchronizedMap(new WeakHashMap<>());
     private final List<XposedInterface.HookHandle> handles = new ArrayList<>();
 
     @Override public void onModuleLoaded(ModuleLoadedParam param) {
+        processName = param.getProcessName();
         log(Log.INFO, TAG, "Module loaded; process=" + param.getProcessName() + "; api=" + getApiVersion());
     }
 
     @Override public synchronized void onPackageReady(PackageReadyParam param) {
-        if (installed || !PACKAGE.equals(param.getPackageName()) || !param.isFirstPackage()) return;
+        if (bootstrapInstalled || !PACKAGE.equals(processName)
+                || !PACKAGE.equals(param.getPackageName()) || !param.isFirstPackage()) return;
         try {
             if (getApiVersion() < 102) throw new IllegalStateException("libxposed API 102 required");
-            String hash = sha256(param.getApplicationInfo().sourceDir);
-            if (!BASE_SHA256.equals(hash)) {
+            ClassLoader loader = param.getClassLoader();
+            String name = param.getApplicationInfo().className;
+            Class<?> applicationClass = name == null || name.isEmpty()
+                    ? Application.class : Host.type(loader, name);
+            if (!Application.class.isAssignableFrom(applicationClass))
+                throw new IllegalStateException("Host application is not an Application");
+            // Hook the nearest onCreate declaration only. Hooking both it and the
+            // base class would initialize inside super.onCreate, before the host is ready.
+            Method onCreate = Host.method(applicationClass, "onCreate");
+            hook(onCreate).setId("application-bootstrap")
+                    .setExceptionMode(ExceptionMode.PASSTHROUGH).intercept(chain -> {
+                        // Preserve host exceptions; module installation failures are caught below.
+                        Object result = chain.proceed();
+                        Object receiver = chain.getThisObject();
+                        if (receiver instanceof Application application
+                                && PACKAGE.equals(application.getPackageName())) {
+                            initialize(application.getApplicationInfo().sourceDir, loader);
+                        }
+                        return result;
+                    });
+            bootstrapInstalled = true;
+            log(Log.INFO, TAG, "WAITING: main process; playback hooks deferred until Application.onCreate returns");
+        } catch (Throwable error) {
+            log(Log.ERROR, TAG, "DISABLED: application bootstrap failed; no strict guarantee", error);
+        }
+    }
+
+    private synchronized void initialize(String sourceDir, ClassLoader loader) {
+        if (initializationStarted) return;
+        initializationStarted = true;
+        try {
+            String hash = sha256(sourceDir);
+            String profile = PROFILES.get(hash);
+            if (profile == null) {
                 log(Log.ERROR, TAG, "DISABLED: unrecognized base APK SHA-256=" + hash);
                 return;
             }
-            Binding b = new Binding(param.getClassLoader());
+            Binding b = new Binding(loader);
             install(b);
-            installed = true;
-            log(Log.INFO, TAG, "ACTIVE: exact 7.0.0-beta/1607 profile; HLS parser and final selection installed");
+            // Publish only after every hook and its reflection binding is ready.
+            active = true;
+            log(Log.INFO, TAG, "ACTIVE: exact " + profile + " profile; HLS parser and final selection installed after Application.onCreate");
         } catch (Throwable error) {
+            // The logical gate stays closed even if a framework unhook fails.
+            active = false;
             for (XposedInterface.HookHandle h : handles) {
                 try { h.unhook(); } catch (Throwable ignored) { }
             }
@@ -53,6 +96,7 @@ public final class StrictModule extends XposedModule {
         // The factory/parser maps carry it to the asynchronous loader thread.
         handles.add(hook(b.createUpstream).setId("song-source-context")
                 .setExceptionMode(ExceptionMode.PASSTHROUGH).intercept(chain -> {
+                    if (!active) return chain.proceed();
                     Object period = chain.getThisObject();
                     Object item = b.periodItem.get(period);
                     Object asset = chain.getArgs().get(0);
@@ -81,6 +125,7 @@ public final class StrictModule extends XposedModule {
 
         handles.add(hook(b.parserFactoryCtor).setId("bind-parser-factory")
                 .setExceptionMode(ExceptionMode.PASSTHROUGH).intercept(chain -> {
+                    if (!active) return chain.proceed();
                     Object result = chain.proceed();
                     Object context = constructingContext.get();
                     if (context != null) factories.put(chain.getThisObject(), context);
@@ -89,6 +134,7 @@ public final class StrictModule extends XposedModule {
         for (Method method : b.createParsers) {
             handles.add(hook(method).setId("bind-parser-" + method.getParameterCount())
                     .setExceptionMode(ExceptionMode.PASSTHROUGH).intercept(chain -> {
+                        if (!active) return chain.proceed();
                         Object result = chain.proceed();
                         Object context = factories.get(chain.getThisObject());
                         if (context != null && result != null) parsers.put(result, context);
@@ -98,6 +144,7 @@ public final class StrictModule extends XposedModule {
 
         handles.add(hook(b.parse).setId("strict-master-playlist")
                 .setExceptionMode(ExceptionMode.PASSTHROUGH).intercept(chain -> {
+                    if (!active) return chain.proceed();
                     Object result = chain.proceed();
                     Object context = parsers.get(chain.getThisObject());
                     if (context == null || !b.master.isInstance(result)) return result;
@@ -116,6 +163,7 @@ public final class StrictModule extends XposedModule {
 
         handles.add(hook(b.selectAudio).setId("strict-final-audio-track")
                 .setExceptionMode(ExceptionMode.PASSTHROUGH).intercept(chain -> {
+                    if (!active) return chain.proceed();
                     Object selector = chain.getThisObject();
                     List<Object> args = chain.getArgs();
                     Object item = b.currentItem.invoke(selector, args.get(5));

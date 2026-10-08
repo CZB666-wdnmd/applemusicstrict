@@ -17,7 +17,13 @@ def source(package, name, body):
 source('android.net','Uri','public class Uri {}')
 source('android.util','Log','public class Log { public static final int INFO=4, ERROR=6, WARN=5; }')
 source('android.util','Pair','public class Pair<A,B> { public final A first; public final B second; public Pair(A a,B b){first=a;second=b;} public static <A,B> Pair<A,B> create(A a,B b){return new Pair<>(a,b);} }')
-source('android.content.pm','ApplicationInfo','public class ApplicationInfo { public String sourceDir; }')
+source('android.content.pm','ApplicationInfo','public class ApplicationInfo { public String sourceDir, className; }')
+source('android.app','Application','''public class Application {
+ public android.content.pm.ApplicationInfo info = new android.content.pm.ApplicationInfo();
+ public String getPackageName(){return "com.apple.android.music";}
+ public android.content.pm.ApplicationInfo getApplicationInfo(){return info;}
+ public void onCreate(){}
+}''')
 source('io.github.libxposed.api','XposedModuleInterface','''public interface XposedModuleInterface {
  interface ModuleLoadedParam { String getProcessName(); }
  interface PackageReadyParam { String getPackageName(); boolean isFirstPackage(); ClassLoader getClassLoader(); android.content.pm.ApplicationInfo getApplicationInfo(); }
@@ -34,7 +40,10 @@ public interface XposedInterface {
 source('io.github.libxposed.api','XposedModule','''import java.lang.reflect.*; import java.util.*;
 public class XposedModule implements XposedInterface, XposedModuleInterface {
  public static final Map<Executable,Hooker<?>> HOOKS = new HashMap<>();
- public HookBuilder hook(Executable e) { return new HookBuilder(){ public HookBuilder setId(String s){return this;} public HookBuilder setExceptionMode(ExceptionMode m){return this;} public <T> HookHandle intercept(Hooker<T> h){HOOKS.put(e,h);return ()->HOOKS.remove(e);} }; }
+ public static int FAIL_AFTER = -1;
+ public static boolean FAIL_UNHOOK;
+ public static Runnable ON_REGISTER = () -> {};
+ public HookBuilder hook(Executable e) { return new HookBuilder(){ public HookBuilder setId(String s){return this;} public HookBuilder setExceptionMode(ExceptionMode m){return this;} public <T> HookHandle intercept(Hooker<T> h){if(FAIL_AFTER==0)throw new IllegalStateException("fixture registration failure");if(FAIL_AFTER>0)FAIL_AFTER--;HOOKS.put(e,h);ON_REGISTER.run();return ()->{if(FAIL_UNHOOK)throw new IllegalStateException("fixture unhook failure");HOOKS.remove(e);};} }; }
  public int getApiVersion(){return 102;} public boolean deoptimize(Executable e){return true;}
  public void log(int p,String t,String m){System.out.println(m);} public void log(int p,String t,String m,Throwable e){System.out.println(m+": "+e);}
 }''')
@@ -93,7 +102,7 @@ env = os.environ.copy()
 jdk = pathlib.Path('/usr/lib/jvm/java-17-openjdk-amd64')
 if (jdk/'lib/libjli.so').exists():
     java=str(jdk/'bin/java'); env['LD_LIBRARY_PATH']=str(jdk/'lib')+':'+str(jdk/'lib/server')
-sources = list(fixtures.rglob('*.java')) + list((root/'app/src/main/java').rglob('*.java')) + [root/'tests/Smoke.java']
+sources = list(fixtures.rglob('*.java')) + list((root/'app/src/main/java').rglob('*.java')) + list((root/'tests').glob('*.java'))
 classes=work/'classes'; classes.mkdir(parents=True)
 subprocess.run([java,'-m','jdk.compiler/com.sun.tools.javac.Main','--release','17','-d',str(classes),*map(str,sources)],check=True,env=env)
 if len(sys.argv)!=2: raise SystemExit('Pass extracted base.apk to test the exact-build guard.')

@@ -39,6 +39,7 @@ public final class Smoke {
         });
     }
     public static void main(String[] args) throws Throwable {
+        BootstrapSmoke.run(args[0]);
         check(!QualityPolicy.allows("HIGH_RES_LOSSLESS",t("mp4a.40.2",256000,44100,16)),"AAC rejected for HiRes");
         check(!QualityPolicy.allows("LOSSLESS",t("mp4a.40.2",64000,44100,16)),"AAC rejected for Lossless");
         check(QualityPolicy.allows("HIGH_RES_LOSSLESS",t("alac",900000,44100,16)),"Ordinary ALAC master accepted for HiRes");
@@ -75,12 +76,11 @@ public final class Smoke {
         item.video=true;check(!Host.streamingSong(item),"Video excluded");item.video=false;item.live=true;check(!Host.streamingSong(item),"Live excluded");item.live=false;item.downloaded=true;check(!Host.streamingSong(item),"Downloaded file excluded");
 
         StrictModule module=new StrictModule();
-        module.onPackageReady(new XposedModuleInterface.PackageReadyParam(){
-            public String getPackageName(){return "com.apple.android.music";} public boolean isFirstPackage(){return true;}
-            public ClassLoader getClassLoader(){return Smoke.class.getClassLoader();}
-            public ApplicationInfo getApplicationInfo(){ApplicationInfo a=new ApplicationInfo();a.sourceDir=args[0];return a;}
-        });
-        check(XposedModule.HOOKS.size()==6,"All six hooks installed after exact-build guard");
+        module.onModuleLoaded(()->"com.apple.android.music");
+        module.onPackageReady(BootstrapSmoke.ready(args[0]));
+        check(XposedModule.HOOKS.size()==1,"Only lifecycle bootstrap installed before Application.onCreate");
+        BootstrapSmoke.start(args[0]);
+        check(XposedModule.HOOKS.size()==7,"Bootstrap and six playback hooks installed after Application.onCreate");
         PlaybackAssetMediaPeriod period=new PlaybackAssetMediaPeriod();
         Method sourceMethod=PlaybackAssetMediaPeriod.class.getDeclaredMethod("createPeriodUpstream",MediaAssetInfo.class);
         Constructor<?> factoryCtor=AppleHlsPlaylistParserFactory.class.getDeclaredConstructor(boolean.class);

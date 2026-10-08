@@ -8,8 +8,12 @@ ap.add_argument('apks')
 args = ap.parse_args()
 with zipfile.ZipFile(args.apks) as bundle:
     base = bundle.read('base.apk')
-expected = '75bcdefe635ec00b2865e789761562a03acd415b5ba18a8e920b995c63811126'
-assert hashlib.sha256(base).hexdigest() == expected, 'Unsupported base APK'
+profiles = {
+    '3d09687ed752e48e73f2c72524e18cffff69c66b523096c2e97c8f9135980603': '7.0.0-beta/1606',
+    '75bcdefe635ec00b2865e789761562a03acd415b5ba18a8e920b995c63811126': '7.0.0-beta/1607',
+}
+expected = hashlib.sha256(base).hexdigest()
+assert expected in profiles, 'Unsupported base APK'
 methods, fields = set(), set()
 with tempfile.TemporaryDirectory() as temp:
     basepath = pathlib.Path(temp, 'base.apk'); basepath.write_bytes(base)
@@ -67,5 +71,5 @@ for n,t in [('format',E+'Format;'),('groupId','Ljava/lang/String;')]:
     fieldchecks.append(E+'source/hls/playlist/HlsMasterPlaylist$Rendition;->'+n+':'+t)
 missing = [m for m in checks if m not in methods] + [f for f in fieldchecks if f not in fields]
 assert not missing, '\n'.join(missing)
-print(json.dumps({'base_sha256':expected,'method_signatures_checked':len(checks),
+print(json.dumps({'profile':profiles[expected],'base_sha256':expected,'method_signatures_checked':len(checks),
                   'field_signatures_checked':len(fieldchecks),'result':'PASS'}, indent=2))

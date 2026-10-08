@@ -55,8 +55,8 @@ ET.register_namespace('android', 'http://schemas.android.com/apk/res/android')
 manifest.write(work / 'AndroidManifest.xml', encoding='utf-8', xml_declaration=True)
 unsigned = work / 'unsigned.apk'
 run(bt / 'aapt2', 'link', '-I', android, '--manifest', work / 'AndroidManifest.xml',
-    '--min-sdk-version', '26', '--target-sdk-version', '35', '--version-code', '1',
-    '--version-name', '0.1.0-experimental', '-o', unsigned, work / 'resources.zip')
+    '--min-sdk-version', '26', '--target-sdk-version', '35', '--version-code', '2',
+    '--version-name', '0.1.1-lifecycle', '-o', unsigned, work / 'resources.zip')
 with zipfile.ZipFile(unsigned, 'a', compression=zipfile.ZIP_DEFLATED) as z:
     for f in sorted(dex.glob('*.dex')):
         z.write(f, f.name)
@@ -72,7 +72,7 @@ if not key.exists():
         '-keypass', 'android', '-alias', 'androiddebugkey', '-keyalg', 'RSA',
         '-keysize', '2048', '-validity', '10000', '-dname', 'CN=Android Debug,O=Android,C=US')
     key.chmod(0o600)
-output = root / 'app/build/outputs/apk/sdk-direct/AppleMusicStrict-0.1.0.apk'
+output = root / 'app/build/outputs/apk/sdk-direct/AppleMusicStrict-0.1.1-lifecycle.apk'
 output.parent.mkdir(parents=True, exist_ok=True)
 signer = bt / 'lib/apksigner.jar'
 run(java, '-jar', signer, 'sign', '--ks', key, '--ks-pass', 'pass:android',

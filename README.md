@@ -1,12 +1,18 @@
 # Apple Music 严格音质（实验模块）
 
-> 2026-10-08 实机排查更新：0.1.0 已复现启动时原生 SIGSEGV。
-> 不建立宿主 Binding、不注册任何 hook 的诊断版仍会崩溃，根因未明。
-> Java 源码已恢复原始完整实现，没有把临时禁用功能当作修复交付。
-> 已按要求暂停手机测试，转为对照 AM++ 源码。下文模拟验证不代表真机通过。
+> 0.1.1-lifecycle：参考 AM++ 的生命周期安装方式，限定主进程，等宿主
+> Application.onCreate 完整返回后安装播放 hook，全部成功后统一激活。
+> 已加入用户提供的 1606 精确 APK profile，同时保留 1607。
+> 已构建并通过本地模拟检查，按要求未连接手机测试，尚不能宣称闪退已修复。
 > 详见 [排查记录与源码对照](CRASH-INVESTIGATION.md)。
 
-针对本次提供的 **Apple Music 7.0.0-beta，versionCode 1607**，使用现代 **libxposed API 102.0.0**。作用域固定为 `com.apple.android.music`。
+针对本次提供的 **Apple Music 7.0.0-beta，versionCode 1606 / 1607**，使用现代 **libxposed API 102.0.0**。作用域固定为 `com.apple.android.music`，仅在主进程激活。
+
+新版 APK 使用本轮更换模块后的同一证书签名，可覆盖本轮诊断版；与最初对话生成的 0.1.0 证书不同。
+1606 base.apk SHA-256：`3d09687ed752e48e73f2c72524e18cffff69c66b523096c2e97c8f9135980603`。
+其他 APK 哈希仍拒绝安装播放 hook，不会仅凭显示的版本号强行适配。
+
+0.1.1 本地验证：两个 profile 各 4065 项 JVM 检查通过，1606 的 24 个方法和 32 个字段签名核验通过，真实 API 102 编译、APK v2/v3 签名和对齐检查通过。未运行 Android Lint，未作本版真机测试。以下旧版构建说明和历史模拟结果不等于本版实机通过。
 
 **已提供签名 APK 和源码工程，尚未在真机验证。** 已完成 DEX 静态核验、真实 libxposed API 102.0.0 / Android 35 编译、官方 SDK 工具构建、APK 签名与对齐检查和模拟行为测试。因此可以安装测试，但不能把这些结果当作实机生效保证。此次 Gradle 插件拉取仍失败，未完成 Android Lint；APK 使用官方 AAPT2、D8、zipalign、apksigner 直接构建。
 
