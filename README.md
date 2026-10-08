@@ -6,6 +6,8 @@
 > 已构建并通过本地模拟检查；随后获准进行的 1606 实机复测仍发生原生 SIGSEGV，闪退未修复。
 > 详见 [排查记录与源码对照](CRASH-INVESTIGATION.md)。
 
+最新实机状态：用户将 LSPosed IT 更新为 2.2.1-it (7919) 后，播放已恢复；当前仍未取得 MASTER/SELECT 命中证据，严格选轨效果待确认。见 [音质检查](QUALITY-CHECK.md)。
+
 针对本次提供的 **Apple Music 7.0.0-beta，versionCode 1606 / 1607**，使用现代 **libxposed API 102.0.0**。作用域固定为 `com.apple.android.music`，仅在主进程激活。
 
 新版 APK 使用本轮更换模块后的同一证书签名，可覆盖本轮诊断版；与最初对话生成的 0.1.0 证书不同。
