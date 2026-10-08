@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">Apple Music 严格音质</string>
+    <string name="module_description">7.0.0-beta 专用：歌曲串流固定用户所选音质，禁止 AAC 降级启播。实验版本。</string>
+</resources>
