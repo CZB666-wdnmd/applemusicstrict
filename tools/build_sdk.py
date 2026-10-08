@@ -15,6 +15,7 @@ p = argparse.ArgumentParser(description=__doc__)
 p.add_argument('--sdk', type=Path, required=True)
 p.add_argument('--java-home', type=Path, required=True)
 p.add_argument('--api-aar', type=Path, required=True)
+p.add_argument('--build-tools', default='34.0.0')
 args = p.parse_args()
 root = Path(__file__).resolve().parents[1]
 sdk, jdk, aar = (x.resolve() for x in (args.sdk, args.java_home, args.api_aar))
@@ -24,10 +25,10 @@ tmp = work / 'tmp'
 tmp.mkdir(exist_ok=True)
 env = os.environ.copy()
 env['LD_LIBRARY_PATH'] = os.pathsep.join(map(str, (
-    jdk / 'lib', jdk / 'lib/server', sdk / 'build-tools/34.0.0/lib64')))
+    jdk / 'lib', jdk / 'lib/server', sdk / 'build-tools' / args.build_tools / 'lib64')))
 env['JAVA_TOOL_OPTIONS'] = '-Djava.io.tmpdir=' + str(tmp)
 java = str(jdk / 'bin/java')
-bt = sdk / 'build-tools/34.0.0'
+bt = sdk / 'build-tools' / args.build_tools
 android = sdk / 'platforms/android-35/android.jar'
 
 def run(*cmd):

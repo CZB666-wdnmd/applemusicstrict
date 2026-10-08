@@ -1,5 +1,11 @@
 # Apple Music 严格音质（实验模块）
 
+> 2026-10-08 实机排查更新：0.1.0 已复现启动时原生 SIGSEGV。
+> 不建立宿主 Binding、不注册任何 hook 的诊断版仍会崩溃，根因未明。
+> Java 源码已恢复原始完整实现，没有把临时禁用功能当作修复交付。
+> 已按要求暂停手机测试，转为对照 AM++ 源码。下文模拟验证不代表真机通过。
+> 详见 [排查记录与源码对照](CRASH-INVESTIGATION.md)。
+
 针对本次提供的 **Apple Music 7.0.0-beta，versionCode 1607**，使用现代 **libxposed API 102.0.0**。作用域固定为 `com.apple.android.music`。
 
 **已提供签名 APK 和源码工程，尚未在真机验证。** 已完成 DEX 静态核验、真实 libxposed API 102.0.0 / Android 35 编译、官方 SDK 工具构建、APK 签名与对齐检查和模拟行为测试。因此可以安装测试，但不能把这些结果当作实机生效保证。此次 Gradle 插件拉取仍失败，未完成 Android Lint；APK 使用官方 AAPT2、D8、zipalign、apksigner 直接构建。
