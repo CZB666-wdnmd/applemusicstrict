@@ -69,6 +69,41 @@ for n,t in [('format',E+'Format;'),('audioGroupId','Ljava/lang/String;')]:
     fieldchecks.append(E+'source/hls/playlist/HlsMasterPlaylist$Variant;->'+n+':'+t)
 for n,t in [('format',E+'Format;'),('groupId','Ljava/lang/String;')]:
     fieldchecks.append(E+'source/hls/playlist/HlsMasterPlaylist$Rendition;->'+n+':'+t)
+# v0.2 control and observation boundary, checked for every accepted APK profile.
+checks += [
+ A+'controller/LocalMediaPlayerController;-><init>(Landroid/os/Handler;)V',
+ A+'controller/LocalMediaPlayerController;->getPlaybackState()I',
+ A+'player/ExoMediaPlayer;->preparePlayer()V',
+ A+'player/ExoMediaPlayer;->getCurrentItem()'+A+'model/PlayerQueueItem;',
+ A+'model/PlayerQueueItem;->getItem()'+A+'model/PlayerMediaItem;',
+ A+'player/ExoMediaPlayer;->getCurrentPosition()J',
+ A+'player/ExoMediaPlayer;->getPlaybackRate()F',
+ A+'player/ExoMediaPlayer;->getCurrentPlaybackFormat()'+A+'player/PlaybackFormat;',
+]
+for name,ret in [('getTitle','Ljava/lang/String;'),('getArtistName','Ljava/lang/String;')]:
+ checks.append(A+'model/PlayerMediaItem;->'+name+'()'+ret)
+for name,ret in [('getAudioQualitySetting',A+'model/AudioQuality;'),('getDolbyAtmosState',A+'model/DolbyAtmosState;'),('isLosslessEnabled','Z'),('isEnhancedAudioEnabled','Z'),('isHlsStreamingEnabled','Z'),('isBitStreamSwitchingEnabled','Z')]:
+ checks.append(A+'player/BaseMediaPlayerContext;->'+name+'()'+ret)
+for name in ['getHlsVariant','getPreferredVariant']:
+ checks.append(A+'player/BaseMediaPlayerContext;->'+name+'(Z)I')
+checks.append(A+'preferences/MediaPlaybackPreferences;->getDolbyAtmosState()'+A+'model/DolbyAtmosState;')
+fieldchecks += [
+ A+'controller/LocalMediaPlayerController;->player:'+A+'player/MediaPlayer;',
+ A+'controller/LocalMediaPlayerController;->controllerHandler:Landroid/os/Handler;',
+ A+'player/ExoMediaPlayer;->pendingSeekPosition:J',
+ A+'player/ExoMediaPlayer;->playWhenQueuePrepared:Z',
+ A+'player/ExoMediaPlayer;->playWhenReady:Z',
+]
+for name,kind in [('codecs','Ljava/lang/String;'),('codecMimeType','Ljava/lang/String;'),('audioGroupId','Ljava/lang/String;'),('bitRate','I'),('sampleRate','I'),('bitDepth','I'),('channelCount','I')]:
+ fieldchecks.append(A+'player/PlaybackFormat;->'+name+':'+kind)
+checks += [
+ A+'player/AppMediaPlayerContext;->isAssetCacheEnabled()Z',
+ A+'util/HlsDownloadInfo;-><init>()V',
+ A+'player/datasource/PlayerHlsDataSourceFactory;-><init>(Ljava/lang/String;'+A+'player/MediaPlayerContext;'+E+'upstream/TransferListener;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Landroid/net/Uri;Landroid/net/Uri;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Z'+E+'drm/appledrm/DrmManager;)V',
+]
+fieldchecks.append(A+'player/datasource/PlayerHlsDataSourceFactory;->hlsDownloadInfo:'+A+'util/HlsDownloadInfo;')
+checks.append(A+'player/datasource/PlayerHlsDataSourceFactory;->getDedicateDownloadedPlaylist()Ljava/lang/String;')
+fieldchecks.append(A+'player/ExoMediaPlayer;->currentTrackFormat:'+E+'Format;')
 missing = [m for m in checks if m not in methods] + [f for f in fieldchecks if f not in fields]
 assert not missing, '\n'.join(missing)
 print(json.dumps({'profile':profiles[expected],'base_sha256':expected,'method_signatures_checked':len(checks),

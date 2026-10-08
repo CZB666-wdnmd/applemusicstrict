@@ -20,6 +20,35 @@ final class StrictManifest {
                 "baseUri", "tags", "hasIndependentSegments"}) Host.field(master, f);
     }
 
+    List<QualityPolicy.Track> tracks(Object playlist) throws ReflectiveOperationException {
+        List<QualityPolicy.Track> result = new ArrayList<>();
+        for (Object variant : (List<?>) Host.get(playlist, "variants")) {
+            Object format = Host.get(variant, "format");
+            if (Host.integer(format, "height") > 0 || Host.integer(format, "width") > 0)
+                throw new IllegalStateException("Video variant in song playlist");
+            result.add(Host.track(format, (String) Host.get(variant, "audioGroupId")));
+        }
+        return result;
+    }
+
+    Object filterChoice(Object playlist, QualityPolicy.Track choice) throws ReflectiveOperationException {
+        Object selected = null;
+        for (Object variant : (List<?>) Host.get(playlist, "variants")) {
+            QualityPolicy.Track t = Host.track(Host.get(variant, "format"), (String) Host.get(variant, "audioGroupId"));
+            if (ControlPolicy.id(t).equals(ControlPolicy.id(choice))) { selected = variant; break; }
+        }
+        if (selected == null) throw new IllegalStateException("Selected variant disappeared");
+        List<Object> audios = new ArrayList<>();
+        for (Object rendition : (List<?>) Host.get(playlist, "audios"))
+            if (Objects.equals(choice.group(), Host.get(rendition, "groupId"))) audios.add(rendition);
+        return constructor.newInstance(Host.get(playlist, "baseUri"), Host.get(playlist, "tags"),
+                Collections.singletonList(selected), Host.get(playlist, "videos"), audios,
+                Host.get(playlist, "subtitles"), Host.get(playlist, "closedCaptions"),
+                Host.get(playlist, "muxedAudioFormat"), Host.get(playlist, "muxedCaptionFormats"),
+                Host.get(playlist, "hasIndependentSegments"), Host.get(playlist, "variableDefinitions"),
+                Host.get(playlist, "sessionKeyDrmInitData"));
+    }
+
     Object filter(Object playlist, String quality) throws ReflectiveOperationException {
         if (!master.isInstance(playlist)) return playlist;
         List<?> variants = (List<?>) Host.get(playlist, "variants");

@@ -1,6 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-    <application android:allowBackup="false" android:hasCode="true"
+    <queries><package android:name="com.apple.android.music" /></queries>
+    <application android:allowBackup="false" android:hasCode="true" android:theme="@style/Theme.Strict"
         android:label="@string/app_name" android:description="@string/module_description"
-        android:supportsRtl="true" />
+        android:supportsRtl="true">
+        <activity android:name=".MainActivity" android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+                <category android:name="de.robv.android.xposed.category.MODULE_SETTINGS" />
+            </intent-filter>
+        </activity>
+        <provider android:name=".ControlProvider" android:authorities="dev.local.applemusicstrict.control"
+            android:grantUriPermissions="true" android:exported="true" />
+    </application>
 </manifest>

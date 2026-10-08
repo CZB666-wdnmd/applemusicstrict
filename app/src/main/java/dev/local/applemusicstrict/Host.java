@@ -49,7 +49,7 @@ final class Host {
                 integer(format, "bitDepth"), integer(format, "channelCount"));
     }
     static boolean song(Object item) throws ReflectiveOperationException {
-        return item != null && ((Number) call(item, "getType")).intValue() == 2
+        return item != null && ((Number) call(item, "getType")).intValue() == 1
                 && !((Boolean) call(item, "isMediaKindVideo"))
                 && !((Boolean) call(item, "isLiveRadio"));
     }

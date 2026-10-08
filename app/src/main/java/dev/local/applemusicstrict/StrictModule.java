@@ -23,6 +23,8 @@ public final class StrictModule extends XposedModule {
     private boolean bootstrapInstalled;
     private boolean initializationStarted;
     private volatile boolean active;
+    private RuntimeControl control;
+    private record SourceScope(Object context, Object item) {}
     private final ThreadLocal<Object> constructingContext = new ThreadLocal<>();
     private final Map<Object, Object> factories = Collections.synchronizedMap(new WeakHashMap<>());
     private final Map<Object, Object> parsers = Collections.synchronizedMap(new WeakHashMap<>());
@@ -54,7 +56,7 @@ public final class StrictModule extends XposedModule {
                         Object receiver = chain.getThisObject();
                         if (receiver instanceof Application application
                                 && PACKAGE.equals(application.getPackageName())) {
-                            initialize(application.getApplicationInfo().sourceDir, loader);
+                            initialize(application, loader);
                         }
                         return result;
                     });
@@ -65,24 +67,28 @@ public final class StrictModule extends XposedModule {
         }
     }
 
-    private synchronized void initialize(String sourceDir, ClassLoader loader) {
+    private synchronized void initialize(Application application, ClassLoader loader) {
         if (initializationStarted) return;
         initializationStarted = true;
         try {
-            String hash = sha256(sourceDir);
+            String hash = sha256(application.getApplicationInfo().sourceDir);
             String profile = PROFILES.get(hash);
             if (profile == null) {
                 log(Log.ERROR, TAG, "DISABLED: unrecognized base APK SHA-256=" + hash);
                 return;
             }
             Binding b = new Binding(loader);
+            control = new RuntimeControl(application);
             install(b);
+            installControls(loader);
             // Publish only after every hook and its reflection binding is ready.
             active = true;
+            control.start();
             log(Log.INFO, TAG, "ACTIVE: exact " + profile + " profile; HLS parser and final selection installed after Application.onCreate");
         } catch (Throwable error) {
             // The logical gate stays closed even if a framework unhook fails.
             active = false;
+            if (control != null) control.stop();
             for (XposedInterface.HookHandle h : handles) {
                 try { h.unhook(); } catch (Throwable ignored) { }
             }
@@ -104,19 +110,19 @@ public final class StrictModule extends XposedModule {
                         return chain.proceed();
                     Object factory = b.periodDataFactory.get(period);
                     Object context = b.dataContext.invoke(factory);
-                    String quality = Host.quality(context);
+                    String quality = "HIGH_RES_LOSSLESS";
                     String assetType = Host.enumName(b.assetType.invoke(asset));
                     boolean hls = "HLS_FAST_PATH".equals(assetType)
                             || "HLS_SUBPLAYBACK_DISPATCH".equals(assetType)
                             || "HLS".equals(b.assetFlavor.invoke(asset));
-                    if (!hls && ("LOSSLESS".equals(quality) || "HIGH_RES_LOSSLESS".equals(quality))) {
+                    if (control.enabled() && !hls) {
                         String message = "Strict quality: lossless requested but source is not HLS";
                         log(Log.ERROR, TAG, message);
                         b.setPrepareError.invoke(period, new IOException(message));
                         return null;
                     }
                     Object previous = constructingContext.get();
-                    constructingContext.set(context);
+                    constructingContext.set(new SourceScope(context, item));
                     try { return chain.proceed(); }
                     finally {
                         if (previous == null) constructingContext.remove(); else constructingContext.set(previous);
@@ -146,16 +152,21 @@ public final class StrictModule extends XposedModule {
                 .setExceptionMode(ExceptionMode.PASSTHROUGH).intercept(chain -> {
                     if (!active) return chain.proceed();
                     Object result = chain.proceed();
-                    Object context = parsers.get(chain.getThisObject());
-                    if (context == null || !b.master.isInstance(result)) return result;
+                    SourceScope scope = (SourceScope) parsers.get(chain.getThisObject());
+                    if (scope == null || !b.master.isInstance(result)) return result;
                     try {
-                        String quality = Host.quality(context);
-                        Object selected = b.manifest.filter(result, quality);
-                        log(Log.INFO, TAG, "MASTER: quality=" + quality + "; one permitted variant retained");
+                        List<QualityPolicy.Track> tracks = b.manifest.tracks(result);
+                        log(Log.INFO, TAG, "AVAILABLE: " + tracks.size() + " source variants");
+                        control.discovered(scope.item(), tracks);
+                        if (!control.enabled()) return result;
+                        QualityPolicy.Track choice = control.choose(scope.item(), tracks);
+                        Object selected = b.manifest.filterChoice(result, choice);
+                        log(Log.INFO, TAG, "MASTER: " + ControlPolicy.label(choice));
                         return selected;
                     } catch (Exception error) {
                         // IOException is handled by the HLS loader. Protective mode would
                         // swallow this and return the unfiltered playlist, allowing AAC.
+                        control.failure(error.getMessage());
                         log(Log.ERROR, TAG, "BLOCKED: no usable strict playlist", error);
                         throw new IOException("AppleMusicStrict: no playlist satisfies the audio setting", error);
                     }
@@ -167,10 +178,11 @@ public final class StrictModule extends XposedModule {
                     Object selector = chain.getThisObject();
                     List<Object> args = chain.getArgs();
                     Object item = b.currentItem.invoke(selector, args.get(5));
-                    if (!Host.streamingSong(item)) return chain.proceed();
+                    if (!Host.streamingSong(item) || !control.enabled()) return chain.proceed();
                     try {
                         return b.select(selector, item, args.get(0), (int[][]) args.get(1), args.get(3));
                     } catch (Exception error) {
+                        control.failure(error.getMessage());
                         log(Log.ERROR, TAG, "BLOCKED: no usable strict audio track", error);
                         // The supplied ExoPlayerImplInternal handles RuntimeException as
                         // a playback error. Do not return null: that invokes AAC fallback.
@@ -180,6 +192,56 @@ public final class StrictModule extends XposedModule {
         // The synthetic callback can otherwise contain an AOT-inlined copy.
         if (!deoptimize(b.createUpstreamCaller))
             log(Log.WARN, TAG, "Could not deoptimize upstream callback; verify MASTER logs on device");
+    }
+
+    private void installControls(ClassLoader loader) throws ReflectiveOperationException {
+        Class<?> context = Host.type(loader, "com.apple.android.music.playback.player.BaseMediaPlayerContext");
+        Class<?> prefs = Host.type(loader, "com.apple.android.music.playback.preferences.MediaPlaybackPreferences");
+        Object high = Host.field(Host.type(loader, "com.apple.android.music.playback.model.AudioQuality"), "HIGH_RES_LOSSLESS").get(null);
+        Class<?> dolby = Host.type(loader, "com.apple.android.music.playback.model.DolbyAtmosState");
+        Object on = Host.field(dolby, "ALWAYS_ON").get(null), off = Host.field(dolby, "OFF").get(null);
+        handles.add(hook(Host.method(context, "getAudioQualitySetting")).setId("control-quality")
+                .intercept(chain -> active && control.enabled() ? high : chain.proceed()));
+        for (Class<?> c : new Class<?>[]{context, prefs})
+            handles.add(hook(Host.method(c, "getDolbyAtmosState")).setId("control-atmos-" + c.getSimpleName())
+                    .intercept(chain -> active && control.enabled() ? (control.config.atmos() ? on : off) : chain.proceed()));
+        for (String name : new String[]{"isLosslessEnabled", "isEnhancedAudioEnabled", "isHlsStreamingEnabled"})
+            handles.add(hook(Host.method(context, name)).setId("control-" + name)
+                    .intercept(chain -> active && control.enabled() ? true : chain.proceed()));
+        Class<?> hlsData = Host.type(loader, "com.apple.android.music.playback.player.datasource.PlayerHlsDataSourceFactory");
+        Constructor<?> hlsCtor = hlsData.getDeclaredConstructor(String.class, Host.type(loader, "com.apple.android.music.playback.player.MediaPlayerContext"),
+                Host.type(loader, "com.google.android.exoplayer2.upstream.TransferListener"), String.class, String.class, String.class,
+                Uri.class, Uri.class, String.class, String.class, String.class, boolean.class,
+                Host.type(loader, "com.google.android.exoplayer2.drm.appledrm.DrmManager"));
+        Constructor<?> emptyCache = Host.type(loader, "com.apple.android.music.playback.util.HlsDownloadInfo").getDeclaredConstructor();
+        Field cacheInfo = Host.field(hlsData, "hlsDownloadInfo");
+        handles.add(hook(hlsCtor).setId("control-online-manifest").intercept(chain -> {
+            Object result = chain.proceed();
+            // Only online song sources bound by createPeriodUpstream; explicit downloads stay untouched.
+            if (active && control.enabled() && constructingContext.get() instanceof SourceScope scope) {
+                cacheInfo.set(chain.getThisObject(), emptyCache.newInstance());
+                factories.put(chain.getThisObject(), scope);
+            }
+            return result;
+        }));
+        handles.add(hook(Host.method(hlsData, "getDedicateDownloadedPlaylist")).setId("control-all-online-variants")
+                .intercept(chain -> active && control.enabled() && factories.containsKey(chain.getThisObject()) ? null : chain.proceed()));
+        Class<?> appContext = Host.type(loader, "com.apple.android.music.playback.player.AppMediaPlayerContext");
+        handles.add(hook(Host.method(appContext, "isAssetCacheEnabled")).setId("control-stream-full-manifest")
+                .intercept(chain -> active && control.enabled() ? false : chain.proceed()));
+        handles.add(hook(Host.method(context, "isBitStreamSwitchingEnabled")).setId("control-no-adaptive")
+                .intercept(chain -> active && control.enabled() ? false : chain.proceed()));
+        Class<?> controller = Host.type(loader, "com.apple.android.music.playback.controller.LocalMediaPlayerController");
+        Constructor<?> ctor = controller.getDeclaredConstructor(android.os.Handler.class);
+        handles.add(hook(ctor).setId("capture-controller").intercept(chain -> {
+            Object result = chain.proceed(); if (active) control.capture(chain.getThisObject()); return result;
+        }));
+        // Covers a controller created during Application.onCreate, before module activation.
+        handles.add(hook(Host.method(controller, "getPlaybackState")).setId("capture-existing-controller").intercept(chain -> {
+            if (active) control.capture(chain.getThisObject()); return chain.proceed();
+        }));
+        for (String name : new String[]{"getHlsVariant", "getPreferredVariant"})
+            deoptimize(Host.method(context, name, boolean.class));
     }
 
     private static String sha256(String path) throws Exception {
@@ -258,7 +320,9 @@ public final class StrictModule extends XposedModule {
         @SuppressWarnings("unchecked")
         Object select(Object selector, Object item, Object groups, int[][] support, Object params)
                 throws ReflectiveOperationException {
-            String quality = Host.quality(selectorContext.get(selector));
+            String quality = "HIGH_RES_LOSSLESS";
+            RuntimeControl.Config config = control.config;
+            String manual = config.manual(RuntimeControl.songId(item));
             Object bestGroup = null, bestFormat = null, bestScore = null;
             QualityPolicy.Track bestTrack = null; int bestIndex = -1;
             int count = groupCount.getInt(groups);
@@ -269,16 +333,18 @@ public final class StrictModule extends XposedModule {
                     if (g >= support.length || t >= support[g].length || (support[g][t] & 7) != 4) continue;
                     Object f = getFormat.invoke(group, t);
                     QualityPolicy.Track track = Host.track(f, (String) audioGroupId.invoke(null, f));
-                    if (!QualityPolicy.allows(quality, track)) continue;
+                    if (!manual.isEmpty() ? !manual.equals(ControlPolicy.id(track)) : !ControlPolicy.eligible(track, config.atmos())) continue;
                     Object score = scoreCtor.newInstance(f, params, support[g][t]);
-                    if (!withinConstraints.getBoolean(score) && !exceedConstraints.getBoolean(params)) continue;
-                    if (bestFormat == null || QualityPolicy.compare(quality, track, bestTrack) > 0) {
+                    // Renderer support remains mandatory; host quality limits are overridden.
+                    if (bestFormat == null || ControlPolicy.compare(track, bestTrack, config.atmos()) > 0) {
                         bestGroup = group; bestFormat = f; bestScore = score;
                         bestTrack = track; bestIndex = t;
                     }
                 }
             }
-            if (bestFormat == null) throw new IllegalStateException("No renderer-supported " + quality + " audio track");
+            // Called once per audio renderer, including renderers with no mapped tracks.
+            // Returning null here skips this renderer without invoking the host AAC fallback.
+            if (bestFormat == null) return null;
             String storeId = (String) Host.call(item, "getSubscriptionStoreId");
             long id;
             try { id = Long.parseLong(storeId); } catch (NumberFormatException ignored) { id = 0; }
@@ -287,6 +353,7 @@ public final class StrictModule extends XposedModule {
             log(Log.INFO, TAG, "SELECT: quality=" + quality + "; codec=" + bestTrack.codecs()
                     + "; rate=" + bestTrack.sampleRate() + "; depth=" + bestTrack.bitDepth()
                     + "; bitrate=" + bestTrack.bitrate() + "; tracks=1");
+            control.selected(item, bestTrack);
             return Pair.create(definition, bestScore);
         }
     }

@@ -2,11 +2,13 @@
 """JVM behavior tests and syntax compile against explicit API-shaped fixtures.
 
 This is NOT compilation against the real libxposed AAR or an Android APK build.
-Run: python3 tests/run.py /absolute/path/to/extracted/base.apk
+Run: python3 tests/run.py
+Legacy Smoke/BootstrapSmoke document v0.1.1 and are not run by this v0.2 test entry.
 """
 import os, pathlib, shutil, subprocess, sys
 root = pathlib.Path(__file__).resolve().parents[1]
 work = root / '.test-build'
+assert work.resolve().parent == root.resolve() and work.name == ".test-build"
 if work.exists(): shutil.rmtree(work)
 fixtures = work / 'fixtures'
 def source(package, name, body):
@@ -78,7 +80,7 @@ public interface TrackSelection { class Definition { public TrackGroup group; pu
 source(exo+'.upstream','ParsingLoadable','public class ParsingLoadable { public interface Parser<T> {} }')
 source(app+'.model','AudioQuality','public enum AudioQuality {HIGH_EFFICIENCY,HIGH_QUALITY,LOSSLESS,HIGH_RES_LOSSLESS}')
 source(app+'.model','PlayerMediaItem','''public class PlayerMediaItem {
- public boolean downloaded, video, live; public int type=2; public int getType(){return type;} public boolean isMediaKindVideo(){return video;} public boolean isLiveRadio(){return live;} public boolean isDownloadedAsset(){return downloaded;} public String getSubscriptionStoreId(){return "123";}
+ public boolean downloaded, video, live; public int type=1; public int getType(){return type;} public boolean isMediaKindVideo(){return video;} public boolean isLiveRadio(){return live;} public boolean isDownloadedAsset(){return downloaded;} public String getSubscriptionStoreId(){return "123";}
 }''')
 source(app+'.model','MediaAssetInfo','''public class MediaAssetInfo { public enum MediaAssetInfoType {DOWNLOADED,HLS_FAST_PATH,HLS_SUBPLAYBACK_DISPATCH,OTHER} public MediaAssetInfoType type=MediaAssetInfoType.HLS_FAST_PATH; public MediaAssetInfoType getType(){return type;} public String getFlavor(){return "HLS";} }''')
 source(app+'.player','MediaPlayerContext','''import com.apple.android.music.playback.model.AudioQuality;
@@ -102,8 +104,8 @@ env = os.environ.copy()
 jdk = pathlib.Path('/usr/lib/jvm/java-17-openjdk-amd64')
 if (jdk/'lib/libjli.so').exists():
     java=str(jdk/'bin/java'); env['LD_LIBRARY_PATH']=str(jdk/'lib')+':'+str(jdk/'lib/server')
-sources = list(fixtures.rglob('*.java')) + list((root/'app/src/main/java').rglob('*.java')) + list((root/'tests').glob('*.java'))
+production = root/'app/src/main/java/dev/local/applemusicstrict'
+sources = list(fixtures.rglob('*.java')) + [production / (n+'.java') for n in ['Host','QualityPolicy','ControlPolicy','StrictManifest']] + [root/'tests/ControlSmoke.java']
 classes=work/'classes'; classes.mkdir(parents=True)
 subprocess.run([java,'-m','jdk.compiler/com.sun.tools.javac.Main','--release','17','-d',str(classes),*map(str,sources)],check=True,env=env)
-if len(sys.argv)!=2: raise SystemExit('Pass extracted base.apk to test the exact-build guard.')
-subprocess.run([java,'-ea','-cp',str(classes),'dev.local.applemusicstrict.Smoke',str(pathlib.Path(sys.argv[1]).resolve())],check=True,env=env)
+subprocess.run([java,'-ea','-cp',str(classes),'dev.local.applemusicstrict.ControlSmoke'],check=True,env=env)
