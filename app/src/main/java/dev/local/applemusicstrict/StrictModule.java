@@ -84,6 +84,7 @@ public final class StrictModule extends XposedModule {
             // Publish only after every hook and its reflection binding is ready.
             active = true;
             control.start();
+            installSettingsEntry(application, loader);
             log(Log.INFO, TAG, "ACTIVE: exact " + profile + " profile; HLS parser and final selection installed after Application.onCreate");
         } catch (Throwable error) {
             // The logical gate stays closed even if a framework unhook fails.
@@ -95,6 +96,67 @@ public final class StrictModule extends XposedModule {
             handles.clear(); factories.clear(); parsers.clear();
             log(Log.ERROR, TAG, "DISABLED: hook installation failed; no strict guarantee", error);
         }
+    }
+
+    /** Settings integration is optional and independent of the playback override switch. */
+    private void installSettingsEntry(Application application, ClassLoader loader) {
+        try {
+            Class<?> model = Host.type(loader, "com.apple.android.music.settings2.model.SettingsViewModel");
+            Class<?> category = Host.type(loader, "com.apple.android.music.settings2.model.b$a");
+            Class<?> action = Host.type(loader, "com.apple.android.music.settings2.model.b$b$b");
+            Class<?> callback = Host.type(loader, "pi.a");
+            Object unit = Host.field(Host.type(loader, "kotlin.Unit"), "a").get(null);
+            Field items = Host.field(category, "c");
+            if (items.getType() != List.class || !callback.isInterface())
+                throw new IllegalStateException("Unexpected settings contract");
+            Object click = Proxy.newProxyInstance(loader, new Class<?>[]{callback}, (proxy, method, args) -> {
+                switch (method.getName()) {
+                    case "invoke":
+                        try {
+                            application.startActivity(new android.content.Intent()
+                                    .setClassName("dev.local.applemusicstrict", "dev.local.applemusicstrict.MainActivity")
+                                    .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK));
+                        } catch (Exception e) {
+                            Log.w(TAG, "Cannot open quality settings", e);
+                            android.widget.Toast.makeText(application, "无法打开音质设置，请从 LSPosed 模块设置进入",
+                                    android.widget.Toast.LENGTH_LONG).show();
+                        }
+                        return unit;
+                    case "equals": return proxy == args[0];
+                    case "hashCode": return System.identityHashCode(proxy);
+                    case "toString": return "AppleMusicStrict settings entry";
+                    default: return null;
+                }
+            });
+            Constructor<?> constructor = action.getDeclaredConstructor(String.class, String.class, boolean.class,
+                    String.class, Host.type(loader, "Ra.I"), callback, int.class);
+            constructor.setAccessible(true);
+            Object row = constructor.newInstance("强制选择音质", null, false, null, null, click, 0x17a);
+            Method audio = Host.method(model, "getAudioCategory", callback, callback, callback,
+                    String.class, boolean.class, boolean.class);
+            if (audio.getReturnType() != category) throw new IllegalStateException("Unexpected audio category");
+            handles.add(hook(audio).setId("audio-settings-entry")
+                    .setExceptionMode(ExceptionMode.PASSTHROUGH).intercept(chain -> {
+                        Object result = chain.proceed();
+                        if (!active || result == null) return result;
+                        try {
+                            // The host creates a fresh category on each call. Preserve all native
+                            // rows and presentation fields without mutating its original row list.
+                            List<?> original = (List<?>) items.get(result);
+                            if (original != null && !original.contains(row)) {
+                                List<Object> extended = new ArrayList<>(original);
+                                extended.add(row);
+                                items.set(result, extended);
+                            }
+                        } catch (Exception e) { Log.w(TAG, "Cannot add audio settings entry", e); }
+                        return result;
+                    }));
+            // Invalidate compiled callers that could have inlined the category factory.
+            for (Method caller : model.getDeclaredMethods()) {
+                if (caller.getName().equals("getPreferenceItems") && !deoptimize(caller))
+                    Log.w(TAG, "Could not deoptimize settings caller; verify entry on device");
+            }
+        } catch (Exception e) { Log.w(TAG, "Audio settings entry unavailable; use LSPosed module settings", e); }
     }
 
     private void install(Binding b) {

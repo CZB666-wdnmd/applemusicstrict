@@ -104,6 +104,13 @@ checks += [
 fieldchecks.append(A+'player/datasource/PlayerHlsDataSourceFactory;->hlsDownloadInfo:'+A+'util/HlsDownloadInfo;')
 checks.append(A+'player/datasource/PlayerHlsDataSourceFactory;->getDedicateDownloadedPlaylist()Ljava/lang/String;')
 fieldchecks.append(A+'player/ExoMediaPlayer;->currentTrackFormat:'+E+'Format;')
+S = 'Lcom/apple/android/music/settings2/model/'
+checks += [
+ S+'SettingsViewModel;->getAudioCategory(Lpi/a;Lpi/a;Lpi/a;Ljava/lang/String;ZZ)'+S+'b$a;',
+ S+'b$b$b;-><init>(Ljava/lang/String;Ljava/lang/String;ZLjava/lang/String;LRa/I;Lpi/a;I)V',
+ 'Lpi/a;->invoke()Ljava/lang/Object;',
+]
+fieldchecks += [S+'b$a;->c:Ljava/util/List;', 'Lkotlin/Unit;->a:Lkotlin/Unit;']
 missing = [m for m in checks if m not in methods] + [f for f in fieldchecks if f not in fields]
 assert not missing, '\n'.join(missing)
 print(json.dumps({'profile':profiles[expected],'base_sha256':expected,'method_signatures_checked':len(checks),
