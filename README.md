@@ -3,7 +3,7 @@
 > 0.1.1-lifecycle：参考 AM++ 的生命周期安装方式，限定主进程，等宿主
 > Application.onCreate 完整返回后安装播放 hook，全部成功后统一激活。
 > 已加入用户提供的 1606 精确 APK profile，同时保留 1607。
-> 已构建并通过本地模拟检查，按要求未连接手机测试，尚不能宣称闪退已修复。
+> 已构建并通过本地模拟检查；随后获准进行的 1606 实机复测仍发生原生 SIGSEGV，闪退未修复。
 > 详见 [排查记录与源码对照](CRASH-INVESTIGATION.md)。
 
 针对本次提供的 **Apple Music 7.0.0-beta，versionCode 1606 / 1607**，使用现代 **libxposed API 102.0.0**。作用域固定为 `com.apple.android.music`，仅在主进程激活。
